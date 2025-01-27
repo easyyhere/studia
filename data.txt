@@ -1,0 +1,4 @@
+# Rozmiar n  Czas dekompozycji (s)  Czas rozwiązywania (s)
+10    0.000025    0.000006
+100   0.000407    0.000015
+1000  0.142852    0.000897
