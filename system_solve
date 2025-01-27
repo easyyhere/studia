@@ -1,0 +1,104 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <gsl/gsl_linalg.h>
+
+// Funkcja do generowania losowej macierzy i wektora
+void generate_system(gsl_matrix *A, gsl_vector *b, int n) {
+    srand(time(NULL));
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            gsl_matrix_set(A, i, j, rand() % 100 + 1); // Losowe wartości z zakresu 1-100
+        }
+        gsl_vector_set(b, i, rand() % 100 + 1);
+    }
+}
+
+// Funkcja do pomiaru czasu CPU
+double measure_time(void (*func)(void *), void *arg) {
+    clock_t start, end;
+    start = clock();
+    func(arg);
+    end = clock();
+    return (double)(end - start) / CLOCKS_PER_SEC;
+}
+
+// Funkcja pomocnicza do rozkładu LU
+void decompose(void *arg) {
+    gsl_permutation *p = ((gsl_permutation **)arg)[0];
+    gsl_matrix *A_copy = ((gsl_matrix **)arg)[1];
+    int *signum = ((int **)arg)[2];
+    gsl_linalg_LU_decomp(A_copy, p, signum);
+}
+
+// Funkcja pomocnicza do rozwiązywania układu
+void solve_system(void *arg) {
+    gsl_vector *x = ((gsl_vector **)arg)[0];
+    gsl_matrix *LU = ((gsl_matrix **)arg)[1];
+    gsl_permutation *p = ((gsl_permutation **)arg)[2];
+    gsl_vector *b = ((gsl_vector **)arg)[3];
+    gsl_linalg_LU_solve(LU, p, b, x);
+}
+
+// Funkcja sprawdzająca poprawność rozwiązania
+int verify_solution(gsl_matrix *A, gsl_vector *x, gsl_vector *b) {
+    gsl_vector *Ax = gsl_vector_alloc(b->size);
+    gsl_blas_dgemv(CblasNoTrans, 1.0, A, x, 0.0, Ax); // Ax = A*x
+    for (size_t i = 0; i < b->size; i++) {
+        if (abs(gsl_vector_get(Ax, i) - gsl_vector_get(b, i)) > 1e-6) {
+            gsl_vector_free(Ax);
+            return 0; // Nieprawidłowe rozwiązanie
+        }
+    }
+    gsl_vector_free(Ax);
+    return 1; // Poprawne rozwiązanie
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        printf("Użycie: %s <rozmiar macierzy n>\n", argv[0]);
+        return 1;
+    }
+
+    int n = atoi(argv[1]);
+    if (n <= 0) {
+        printf("Rozmiar macierzy musi być większy od 0\n");
+        return 1;
+    }
+
+    gsl_matrix *A = gsl_matrix_alloc(n, n);
+    gsl_matrix *A_copy = gsl_matrix_alloc(n, n);
+    gsl_vector *b = gsl_vector_alloc(n);
+    gsl_vector *x = gsl_vector_alloc(n);
+    gsl_permutation *p = gsl_permutation_alloc(n);
+
+    int signum;
+    generate_system(A, b, n);
+    gsl_matrix_memcpy(A_copy, A);
+
+    // Mierzenie czasu dekompozycji
+    void *decomp_args[] = {p, A_copy, &signum};
+    double decomp_time = measure_time(decompose, decomp_args);
+
+    // Mierzenie czasu rozwiązania
+    void *solve_args[] = {x, A_copy, p, b};
+    double solve_time = measure_time(solve_system, solve_args);
+
+    // Weryfikacja rozwiązania
+    if (verify_solution(A, x, b)) {
+        printf("Rozwiązanie poprawne.\n");
+    } else {
+        printf("Rozwiązanie niepoprawne.\n");
+    }
+
+    printf("Czas dekompozycji: %.6f s\n", decomp_time);
+    printf("Czas rozwiązania: %.6f s\n", solve_time);
+
+    gsl_matrix_free(A);
+    gsl_matrix_free(A_copy);
+    gsl_vector_free(b);
+    gsl_vector_free(x);
+    gsl_permutation_free(p);
+
+    return 0;
+}
